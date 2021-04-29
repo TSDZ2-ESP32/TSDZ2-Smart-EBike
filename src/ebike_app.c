@@ -60,7 +60,7 @@ static uint8_t ui8_pedal_cadence_RPM = 0;
 // torque sensor
 
 uint16_t ui16_adc_pedal_torque_offset = 100;
-uint8_t ui8_adc_coaster_brake_threshold = (100 >> 2) - (COASTER_BRAKE_TORQUE_THRESHOLD >> 2);
+uint16_t ui16_adc_coaster_brake_threshold = 100 - COASTER_BRAKE_TORQUE_THRESHOLD;
 static uint16_t ui16_adc_pedal_torque = 0;
 static uint16_t ui16_adc_pedal_torque_delta = 0;
 static uint16_t ui16_pedal_torque_x100 = 0;
@@ -545,33 +545,22 @@ static void apply_power_assist(uint8_t ui8_riding_mode) {
         ui8_duty_cycle_ramp_up_inverse_step = PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN;
         ui8_duty_cycle_ramp_down_inverse_step = PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN;
     } else {
-        if (ui8_riding_mode != CADENCE_ASSIST_MODE) {
-            ui8_duty_cycle_ramp_up_inverse_step = map_ui8((uint8_t)(ui16_wheel_speed_x10>>2),
-                    (uint8_t)10, // 10*4 = 40 -> 4 kph
-                    (uint8_t)50, // 50*4 = 200 -> 20 kph
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default,
-                    (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
-            ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
-                    (uint8_t)20, // 20 rpm
-                    (uint8_t)80, // 90 rpm
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default,
-                    (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
-            if (ui8_tmp < ui8_duty_cycle_ramp_up_inverse_step)
-                ui8_duty_cycle_ramp_up_inverse_step = ui8_tmp;
-        } else {
-            ui8_duty_cycle_ramp_up_inverse_step = map_ui8((uint8_t)(ui16_wheel_speed_x10>>2),
-                    (uint8_t)10, // 10*4 = 40 -> 4 kph
-                    (uint8_t)50, // 50*4 = 200 -> 20 kph
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default + PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET,
-                    (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
-            ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
-                    (uint8_t)20, // 20 rpm
-                    (uint8_t)80, // 90 rpm
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default + PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET,
-                    (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
-            if (ui8_tmp < ui8_duty_cycle_ramp_up_inverse_step)
-                ui8_duty_cycle_ramp_up_inverse_step = ui8_tmp;
-        }
+        uint8_t ui8_ramp_up_inverse_step_max = ui8_duty_cycle_ramp_up_inverse_step_default;
+        if (ui8_riding_mode == CADENCE_ASSIST_MODE)
+            ui8_ramp_up_inverse_step_max += PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET;
+
+        ui8_duty_cycle_ramp_up_inverse_step = map_ui8((uint8_t)(ui16_wheel_speed_x10>>2),
+                (uint8_t)10, // 10*4 = 40 -> 4 kph
+                (uint8_t)50, // 50*4 = 200 -> 20 kph
+                (uint8_t)ui8_ramp_up_inverse_step_max,
+                (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
+        ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
+                (uint8_t)20, // 20 rpm
+                (uint8_t)70, // 70 rpm
+                (uint8_t)ui8_ramp_up_inverse_step_max,
+                (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
+        if (ui8_tmp < ui8_duty_cycle_ramp_up_inverse_step)
+            ui8_duty_cycle_ramp_up_inverse_step = ui8_tmp;
 
         ui8_duty_cycle_ramp_down_inverse_step = map_ui8((uint8_t)(ui16_wheel_speed_x10>>2),
                 (uint8_t)10, // 10*4 = 40 -> 4 kph
@@ -580,7 +569,7 @@ static void apply_power_assist(uint8_t ui8_riding_mode) {
                 (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN);
         ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
                 (uint8_t)20, // 20 rpm
-                (uint8_t)80, // 90 rpm
+                (uint8_t)70, // 70 rpm
                 (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_DEFAULT,
                 (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN);
         if (ui8_tmp < ui8_duty_cycle_ramp_down_inverse_step)
@@ -631,12 +620,12 @@ static void apply_torque_assist() {
             ui8_duty_cycle_ramp_up_inverse_step = map_ui8((uint8_t)(ui16_wheel_speed_x10>>2),
                     (uint8_t)10, // 10*4 = 40 -> 4 kph
                     (uint8_t)50, // 50*4 = 200 -> 20 kph
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default + PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET,
+                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default,
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
             ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
                     (uint8_t)20, // 20 rpm
-                    (uint8_t)80, // 90 rpm
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default + PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET,
+                    (uint8_t)70, // 70 rpm
+                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default,
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
             if (ui8_tmp < ui8_duty_cycle_ramp_up_inverse_step)
                 ui8_duty_cycle_ramp_up_inverse_step = ui8_tmp;
@@ -648,7 +637,7 @@ static void apply_torque_assist() {
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN);
             ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
                     (uint8_t)20, // 20 rpm
-                    (uint8_t)80, // 90 rpm
+                    (uint8_t)70, // 70 rpm
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_DEFAULT,
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN);
             if (ui8_tmp < ui8_duty_cycle_ramp_down_inverse_step)
@@ -802,12 +791,12 @@ static void apply_emtb_assist() {
             ui8_duty_cycle_ramp_up_inverse_step = map_ui8((uint8_t)(ui16_wheel_speed_x10>>2),
                     (uint8_t)10, // 10*4 = 40 -> 4 kph
                     (uint8_t)50, // 50*4 = 200 -> 20 kph
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default + PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET,
+                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default,
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
             ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
                     (uint8_t)20, // 20 rpm
-                    (uint8_t)80, // 90 rpm
-                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default + PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_CADENCE_OFFSET,
+                    (uint8_t)70, // 70 rpm
+                    (uint8_t)ui8_duty_cycle_ramp_up_inverse_step_default,
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN);
             if (ui8_tmp < ui8_duty_cycle_ramp_up_inverse_step)
                 ui8_duty_cycle_ramp_up_inverse_step = ui8_tmp;
@@ -819,7 +808,7 @@ static void apply_emtb_assist() {
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN);
             ui8_tmp = map_ui8(ui8_pedal_cadence_RPM,
                     (uint8_t)20, // 20 rpm
-                    (uint8_t)80, // 90 rpm
+                    (uint8_t)70, // 70 rpm
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_DEFAULT,
                     (uint8_t)PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_MIN);
             if (ui8_tmp < ui8_duty_cycle_ramp_down_inverse_step)
@@ -955,7 +944,7 @@ static void apply_cruise() {
 static void apply_throttle() {
 
     // map value from 0 to 255
-    ui8_adc_throttle = map_ui8((uint8_t) UI8_ADC_THROTTLE,
+    ui8_adc_throttle = map_ui8((uint8_t)(ui16_adc_throttle >> 2),
             (uint8_t) ADC_THROTTLE_MIN_VALUE,
             (uint8_t) ADC_THROTTLE_MAX_VALUE,
             (uint8_t) 0,
@@ -998,7 +987,7 @@ static void apply_temperature_limiting() {
     static uint16_t ui16_adc_motor_temperature_filtered;
 
     // get ADC measurement
-    volatile uint16_t ui16_temp = UI16_ADC_10_BIT_THROTTLE;
+    volatile uint16_t ui16_temp = ui16_adc_throttle;
 
     // filter ADC measurement to motor temperature variable
     ui16_adc_motor_temperature_filtered = filter(ui16_temp, ui16_adc_motor_temperature_filtered, 8);
@@ -1085,24 +1074,21 @@ static uint8_t toffset_cycle_counter = 0;
 static void get_pedal_torque(void) {
     if (toffset_cycle_counter < TOFFSET_END_CYCLES) {
     	if (toffset_cycle_counter > TOFFSET_START_CYCLES) {
-			uint16_t ui16_tmp = UI16_ADC_10_BIT_TORQUE_SENSOR;
+			uint16_t ui16_tmp = ui16_adc_torque;
 			ui16_adc_pedal_torque_offset = filter(ui16_tmp, ui16_adc_pedal_torque_offset, 2);
     	}
         toffset_cycle_counter++;
         if (toffset_cycle_counter == TOFFSET_END_CYCLES) {
             ui16_adc_pedal_torque_offset += ADC_TORQUE_SENSOR_CALIBRATION_OFFSET;
             if (ui16_adc_pedal_torque_offset > COASTER_BRAKE_TORQUE_THRESHOLD)
-                if ((ui16_adc_pedal_torque_offset % 4) < 3)
-                    ui8_adc_coaster_brake_threshold = (ui16_adc_pedal_torque_offset >> 2) - (COASTER_BRAKE_TORQUE_THRESHOLD >> 2);
-                else
-                    ui8_adc_coaster_brake_threshold = (ui16_adc_pedal_torque_offset >> 2) - ((COASTER_BRAKE_TORQUE_THRESHOLD >> 2) - 1);
+                ui16_adc_coaster_brake_threshold = ui16_adc_pedal_torque_offset - COASTER_BRAKE_TORQUE_THRESHOLD;
             else
-                ui8_adc_coaster_brake_threshold = 0;
+                ui16_adc_coaster_brake_threshold = 0;
         }
         ui16_adc_pedal_torque = ui16_adc_pedal_torque_offset;
     } else {
         // get adc pedal torque
-        ui16_adc_pedal_torque = UI16_ADC_10_BIT_TORQUE_SENSOR;
+        ui16_adc_pedal_torque = ui16_adc_torque;
     }
 
     // calculate the delta value of adc pedal torque and the adc pedal torque offset from calibration
@@ -1454,7 +1440,7 @@ static void uart_receive_package(void) {
             	// battery low voltage cut off x10
 				m_configuration_variables.ui16_battery_low_voltage_cut_off_x10 = (((uint16_t) ui8_rx_buffer[6]) << 8) + ((uint16_t) ui8_rx_buffer[5]);
 				// set low voltage cutoff (8 bit)
-				ui8_adc_battery_voltage_cut_off = (m_configuration_variables.ui16_battery_low_voltage_cut_off_x10 * 25U) / BATTERY_VOLTAGE_PER_10_BIT_ADC_STEP_X1000;
+				ui16_adc_voltage_cut_off = (m_configuration_variables.ui16_battery_low_voltage_cut_off_x10 * 100U) / BATTERY_VOLTAGE_PER_10_BIT_ADC_STEP_X1000;
 
                 // max battery current
                 ui8_battery_current_max = ui8_rx_buffer[7];
@@ -1512,14 +1498,10 @@ static void uart_receive_package(void) {
                 // Torque ADC offset fix. Enabled if MSB (bit 7 of ui8_rx_buffer[9]) is set
 				if (ui8_rx_buffer[9] & 0x80) {
 					ui16_adc_pedal_torque_offset = (((uint16_t)(ui8_rx_buffer[9] & 0x7f)) << 8) + ((uint16_t) ui8_rx_buffer[8]);
-
 					if (ui16_adc_pedal_torque_offset > COASTER_BRAKE_TORQUE_THRESHOLD)
-						if ((ui16_adc_pedal_torque_offset % 4) < 3)
-							ui8_adc_coaster_brake_threshold = (ui16_adc_pedal_torque_offset >> 2) - (COASTER_BRAKE_TORQUE_THRESHOLD >> 2);
-						else
-							ui8_adc_coaster_brake_threshold = (ui16_adc_pedal_torque_offset >> 2) - ((COASTER_BRAKE_TORQUE_THRESHOLD >> 2) - 1);
+					    ui16_adc_coaster_brake_threshold = ui16_adc_pedal_torque_offset - COASTER_BRAKE_TORQUE_THRESHOLD;
 					else
-						ui8_adc_coaster_brake_threshold = 0;
+						ui16_adc_coaster_brake_threshold = 0;
 				}
 
                 // pedal torque conversion
@@ -1587,6 +1569,11 @@ extern uint8_t ui8_max_motor_time;
 extern uint8_t ui8_max_ebike_time;
 #endif
 
+#ifdef HALL_DEBUG
+extern volatile uint8_t ui8_hall_val_errors;
+extern volatile uint8_t ui8_hall_seq_errors;
+#endif
+
 static void uart_send_package(void) {
     uint8_t  ui8_i;
     uint16_t ui16_temp;
@@ -1630,7 +1617,7 @@ static void uart_send_package(void) {
     // Wheel Speed
     // bit 0..11; speedx10 (Km/h)
     // bit 12: free for future use
-    // bit 13: free for future use
+    // bit 13: flag for HALL_DEBUG present
     // bit 14: flag for MAIN_TIME_DEBUG present
     // bit 15: flag for PWM_TIME_DEBUG present
     ui16_temp = ui16_wheel_speed_x10;
@@ -1641,6 +1628,9 @@ static void uart_send_package(void) {
     #endif
     #ifdef MAIN_TIME_DEBUG
         ui8_tx_buffer[5] |= 0x40;
+    #endif
+    #ifdef HALL_DEBUG
+        ui8_tx_buffer[5] |= 0x20;
     #endif
 
     // pedal cadence
@@ -1705,7 +1695,7 @@ static void uart_send_package(void) {
         ui8_tx_buffer[18] = (uint8_t) (ui16_temp >> 8);
 
         // optional ADC channel value
-        ui8_tx_buffer[19] = UI8_ADC_THROTTLE;
+        ui8_tx_buffer[19] = (uint8_t)(ui16_adc_throttle >> 2);
 
         // throttle value with offset applied and mapped from 0 to 255
         if (m_configuration_variables.ui8_optional_ADC_function == THROTTLE_CONTROL)
@@ -1733,6 +1723,8 @@ static void uart_send_package(void) {
         // Crank Revolutions
         #ifdef PWM_TIME_DEBUG
             ui16_temp = ui16_max_pwm_up_time;
+        #elif defined(HALL_DEBUG)
+            ui16_temp = (uint16_t)(ui8_hall_val_errors + (uint16_t)(ui8_hall_seq_errors << 8));
         #else
             ui16_temp = (ui32_crank_revolutions_x20 / CADENCE_SENSOR_NUMBER_MAGNETS);
         #endif
