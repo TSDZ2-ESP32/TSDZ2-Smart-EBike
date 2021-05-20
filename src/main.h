@@ -13,7 +13,7 @@
 //#define MAIN_TIME_DEBUG
 //#define HALL_DEBUG
 
-#define FW_VERSION 13
+#define FW_VERSION 14
 
 /*---------------------------------------------------------
  NOTE: regarding motor rotor offset
@@ -74,8 +74,8 @@
 #define WHEEL_SPEED_SENSOR_TICKS_COUNTER_MIN                    (uint16_t)((uint32_t)PWM_CYCLES_SECOND*1000U/477U) // 32767@15625KHz could be a bigger number but will make for a slow detection of stopped wheel speed
 
 
-#define MIDDLE_SVM_TABLE                                          107
-#define MIDDLE_PWM_COUNTER                                        107
+#define MIDDLE_SVM_TABLE                                          110
+#define MIDDLE_PWM_COUNTER                                        110
 
 #define PWM_DUTY_CYCLE_MAX                                        254
 #define PWM_DUTY_CYCLE_STARTUP                                    30    // Initial PWM Duty Cycle at motor startup

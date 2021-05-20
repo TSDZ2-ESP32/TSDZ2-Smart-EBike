@@ -24,7 +24,7 @@ typedef struct _configuration_variables {
     uint16_t ui16_battery_low_voltage_cut_off_x10;
     uint16_t ui16_wheel_perimeter;
     uint8_t ui8_wheel_speed_max;
-    uint8_t ui8_motor_inductance_x1048576;
+    uint8_t ui8_foc_angle_multiplicator;
     uint8_t ui8_pedal_torque_per_10_bit_ADC_step_x100;
     uint8_t ui8_target_battery_max_power_div25;
     uint8_t ui8_optional_ADC_function;

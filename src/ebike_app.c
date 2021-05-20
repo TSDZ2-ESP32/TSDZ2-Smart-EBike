@@ -27,7 +27,7 @@ volatile struct_configuration_variables m_configuration_variables = {
         .ui16_battery_low_voltage_cut_off_x10 = 300, // 36 V battery, 30.0V (3.0 * 10)
         .ui16_wheel_perimeter = 2050,                // 26'' wheel: 2050 mm perimeter
         .ui8_wheel_speed_max = 25,                   // 25 Km/h
-        .ui8_motor_inductance_x1048576 = 80,         // 36V motor 76 uH
+        .ui8_foc_angle_multiplicator = 24,           // 36V motor default value
         .ui8_pedal_torque_per_10_bit_ADC_step_x100 = 67,
         .ui8_target_battery_max_power_div25 = 20,    // 500W (500/25 = 20)
         .ui8_optional_ADC_function = 0               // 0 = no function
@@ -53,12 +53,14 @@ static uint8_t ui8_adc_battery_current_max = ADC_10_BIT_BATTERY_CURRENT_MAX;
 static uint8_t ui8_adc_battery_current_target = 0;
 static uint8_t ui8_duty_cycle_target = 0;
 
+// Motor ERPS
+uint16_t ui16_motor_speed_erps = 0;
+
 // cadence sensor
 uint16_t ui16_cadence_ticks_count_min_speed_adj = CADENCE_SENSOR_CALC_COUNTER_MIN;
 static uint8_t ui8_pedal_cadence_RPM = 0;
 
 // torque sensor
-
 uint16_t ui16_adc_pedal_torque_offset = 100;
 uint16_t ui16_adc_coaster_brake_threshold = 100 - COASTER_BRAKE_TORQUE_THRESHOLD;
 static uint16_t ui16_adc_pedal_torque = 0;
@@ -317,6 +319,7 @@ static void uart_receive_package(void);
 static void uart_send_package(void);
 
 // system functions
+static void get_battery_voltage(void);
 static void get_pedal_torque(void);
 static void calc_wheel_speed(void);
 static void calc_cadence(void);
@@ -339,6 +342,14 @@ static void apply_speed_limit();
 void ebike_app_controller(void) {
     static uint8_t ui8_counter;
 
+    // calculate motor ERPS
+    uint16_t ui16_tmp = ui16_hall_counter_total;
+    if (((uint8_t)(ui16_tmp>>8)) & 0x80)
+        ui16_motor_speed_erps = 0;
+    else
+        // Reduce operands to 16 bit (Avoid slow _divulong() library function)
+        ui16_motor_speed_erps = (uint16_t)(HALL_COUNTER_FREQ >> 2) / (uint16_t)(ui16_tmp >> 2);
+
     // calculate the wheel speed
     calc_wheel_speed();
 
@@ -346,7 +357,7 @@ void ebike_app_controller(void) {
     calc_cadence();
 
     // Calculate filtered Battery Voltage (mV)
-    ui16_battery_voltage_filtered_x1000 = ui16_adc_battery_voltage_filtered * BATTERY_VOLTAGE_PER_10_BIT_ADC_STEP_X1000;
+    get_battery_voltage();
 
     // Calculate filtered Battery Current (Ampx10)
     ui8_battery_current_filtered_x10 = (uint16_t)(ui8_adc_battery_current_filtered * (uint8_t)BATTERY_CURRENT_PER_10_BIT_ADC_STEP_X100) / 10;
@@ -1066,6 +1077,25 @@ static void calc_cadence(void) {
      -------------------------------------------------------------------------------------------------*/
 }
 
+void get_battery_voltage(void) {
+#define READ_BATTERY_VOLTAGE_FILTER_COEFFICIENT   2
+
+    /*---------------------------------------------------------
+     NOTE: regarding filter coefficients
+
+     Possible values: 0, 1, 2, 3, 4, 5, 6
+     0 equals to no filtering and no delay, higher values
+     will increase filtering but will also add a bigger delay.
+     ---------------------------------------------------------*/
+
+    static uint16_t ui16_adc_battery_voltage_accumulated;
+
+    // low pass filter the voltage readed value, to avoid possible fast spikes/noise
+    ui16_adc_battery_voltage_accumulated -= ui16_adc_battery_voltage_accumulated >> READ_BATTERY_VOLTAGE_FILTER_COEFFICIENT;
+    ui16_adc_battery_voltage_accumulated += ui16_adc_voltage;
+    ui16_battery_voltage_filtered_x1000 = (ui16_adc_battery_voltage_accumulated >> READ_BATTERY_VOLTAGE_FILTER_COEFFICIENT) * BATTERY_VOLTAGE_PER_10_BIT_ADC_STEP_X1000;
+}
+
 
 #define TOFFSET_START_CYCLES 160 // Torque offset calculation stars after 160 cycles = 4sec (25ms*160)
 #define TOFFSET_END_CYCLES 200   // Torque offset calculation ends after 200 cycles = 5sec (25ms*200)
@@ -1100,10 +1130,6 @@ static void get_pedal_torque(void) {
 
     // calculate torque on pedals
     ui16_pedal_torque_x100 = ui16_adc_pedal_torque_delta * m_configuration_variables.ui8_pedal_torque_per_10_bit_ADC_step_x100;
-}
-
-struct_configuration_variables* get_configuration_variables(void) {
-    return &m_configuration_variables;
 }
 
 
@@ -1400,10 +1426,16 @@ static void communications_controller(void) {
 
     uart_send_package();
 
-    // reset riding mode if connection with the LCD is lost for more than 0,3 sec (safety)
-    if (no_rx_counter > 3)
+    // reset riding mode if connection with the LCD is lost for more than 0,5 sec (safety)
+    if (no_rx_counter > 5)
         ui8_riding_mode = OFF_MODE;
 }
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#ifdef DEADTIME_TEST
+static uint8_t ui8_dead_time = 24;
+static uint8_t ui8_tmp_val = 24;
+#endif
 
 static void uart_receive_package(void) {
     uint8_t ui8_i;
@@ -1455,8 +1487,11 @@ static void uart_receive_package(void) {
                 // set max battery current
                 ui8_adc_battery_current_max = ui8_min(ui8_adc_battery_current_max_temp_1, ui8_adc_battery_current_max_temp_2);
 
-                // type of motor (36 volt, 48 volt or some experimental type)
-                m_configuration_variables.ui8_motor_inductance_x1048576 = ui8_rx_buffer[9];
+                // FOC Angle multiplicator coefficent (value based on motor type 36/48 volt)
+                if (ui8_rx_buffer[9] > 50)
+                    m_configuration_variables.ui8_foc_angle_multiplicator = 50;
+                else
+                    m_configuration_variables.ui8_foc_angle_multiplicator = ui8_rx_buffer[9];
 
                 // motor acceleration adjustment
                 uint8_t ui8_motor_acceleration_adjustment = ui8_rx_buffer[10];
@@ -1471,7 +1506,31 @@ static void uart_receive_package(void) {
             case 1:
                 // free for future use
                 //ui8_rx_buffer[5]
-                //ui8_rx_buffer[6]
+                // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                #ifdef DEADTIME_TEST
+                if (ui8_riding_mode == MOTOR_CALIBRATION_MODE) {
+                    ui8_tmp_val = 24 + ui8_rx_buffer[5];
+                    if (ui8_tmp_val < 14)
+                        ui8_tmp_val = 14;
+                    else if (ui8_tmp_val > 32)
+                        ui8_tmp_val = 32;
+                    if (ui8_dead_time != ui8_tmp_val) {
+                        TIM1->DTR = (uint8_t)(ui8_tmp_val);
+                        ui8_dead_time = ui8_tmp_val;
+                    }
+                } else if (ui8_dead_time != 24) {
+                    TIM1->DTR = 24;
+                    ui8_dead_time = 24;
+                }
+                #endif
+
+                // Change Field Weakening enable state only if motor is stopped
+                if (!ui8_motor_enabled)
+                    if (ui8_rx_buffer[6] & 0x01) {
+                        ui8_field_weakening_enabled = 1;
+                    } else {
+                        ui8_field_weakening_enabled = 0;
+                    }
 
                 // wheel perimeter
                 m_configuration_variables.ui16_wheel_perimeter = (((uint16_t) ui8_rx_buffer[8]) << 8) + ((uint16_t) ui8_rx_buffer[7]);
@@ -1565,7 +1624,6 @@ static uint16_t ui16_max_pwm_up_time = 0;
 #endif
 
 #ifdef MAIN_TIME_DEBUG
-extern uint8_t ui8_max_motor_time;
 extern uint8_t ui8_max_ebike_time;
 #endif
 
@@ -1732,11 +1790,7 @@ static void uart_send_package(void) {
             ui8_tx_buffer[25] = (uint8_t) (ui16_temp >> 8);
 
         // Free for future use
-        #ifdef MAIN_TIME_DEBUG
-            ui8_tx_buffer[26] = ui8_max_motor_time;
-        #else
-            ui8_tx_buffer[26] = 0;
-        #endif
+        ui8_tx_buffer[26] = 0;
     }
 
     // prepare crc of the package
